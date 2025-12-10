@@ -12,8 +12,8 @@ pipeline {
         PRJ_DIR='/var/www/plant-shop'
         //SLACK=credentials('token')
         //CHANNEL_ID=""
-        GIT_URL="git@github.com:AnastasiyaGapochkina01/StoreShop.git"
-        HOST='3.133.91.95'
+        GIT_URL="git@github.com:Bella0708/Storeshop2.git"
+        HOST='3.23.131.59'
     }
 
     stages {
@@ -116,15 +116,4 @@ pipeline {
         }
     }
 
-    post {
-        success {
-            slackSend(color: 'good', message: "Build success: ${env.JOB_NAME} #${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)")
-        }
-        failure {
-            slackSend(color: 'danger', message: "Build failed: ${env.JOB_NAME} #${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)")
-        }
-        unstable {
-            slackSend(color: 'warning', message: "Unstable build: ${env.JOB_NAME} #${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)")
-        }
-    }
 }
