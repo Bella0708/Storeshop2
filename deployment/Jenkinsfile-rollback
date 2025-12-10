@@ -1,0 +1,48 @@
+def remote = [:]
+
+pipeline {
+    agent any
+    parameters {
+        string(name: 'RELEASE_VERSION', defaultValue: '', description: 'Release version to rollback, ex: release-2025-11-29_1764425124', trim: true)
+    }
+  
+    environment {
+        PRJ_DIR='/var/www/plant-shop'
+        //GIT_URL="git@github.com:AnastasiyaGapochkina01/plant-shop-m2.git"
+        HOST='3.133.91.95'
+    }
+  
+    stages {
+        stage('Notify rollback started') {
+          steps {
+            script {
+              slackSend(color: 'good', message: "Rollback started: ${env.JOB_NAME} #${env.BUILD_NUMBER}")
+            }
+          }
+        }
+        stage('Prepare Credentials') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'jenkins-key', usernameVariable: 'username', keyFileVariable: 'private_key')]) {
+                    script {
+                        remote.name = "${env.HOST}"
+                        remote.host = "${env.HOST}"
+                        remote.user = "${username}"
+                        remote.identity = readFile "${private_key}"
+                        remote.allowAnyHosts = true
+                    }
+                }
+           }
+        }
+
+        stage('Switch release') {
+            steps {
+                script {
+                    sshCommand remote: remote, command: """
+                        cd ${env.PRJ_DIR}
+                        sudo -u www-data bash -c 'ln -sfn ${env.PRJ_DIR}/${params.RELEASE_VERSION} ${env.PRJ_DIR}/current'
+                    """
+                }
+            }
+        }
+    }
+}

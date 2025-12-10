@@ -1,0 +1,130 @@
+def remote = [:]
+
+pipeline {
+    agent any
+    parameters {
+        gitParameter(type: 'PT_BRANCH', name: 'BRANCH_TO_BUILD', branchFilter: 'origin/(.*)', defaultValue: 'main', selectedValue: 'DEFAULT', sortMode: 'DESCENDING_SMART')
+        choice(name: 'ENV', choices: ['dev', 'demo', 'prod'], description: 'Select environment')
+        booleanParam(name: 'CLEAR_CACHE', defaultValue: false)
+    }
+
+    environment {
+        PRJ_DIR='/var/www/plant-shop'
+        //SLACK=credentials('token')
+        //CHANNEL_ID=""
+        GIT_URL="git@github.com:AnastasiyaGapochkina01/StoreShop.git"
+        HOST='3.133.91.95'
+    }
+
+    stages {
+        stage('Prepare Credentials') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'jenkins-key', usernameVariable: 'username', keyFileVariable: 'private_key')]) {
+                    script {
+                        remote.name = "${env.HOST}"
+                        remote.host = "${env.HOST}"
+                        remote.user = "${username}"
+                        remote.identity = readFile "${private_key}"
+                        remote.allowAnyHosts = true
+                    }
+                }
+           }
+        }
+
+        stage('Checkout branch to build') {
+            steps {
+                script {
+                    slackSend(color: 'good', message: "Build started: ${env.JOB_NAME} #${env.BUILD_NUMBER}")
+                    def RELEASE = sh(script: 'date +%Y-%m-%d_%s', returnStdout: true).trim()
+                    def RELEASE_DIR = "${env.PRJ_DIR}/release-${RELEASE}"
+                    sshCommand remote: remote, command: """
+                        sudo -u www-data bash -c 'git clone -b ${params.BRANCH_TO_BUILD} ${env.GIT_URL} ${RELEASE_DIR}'
+                    """
+                    env.RELEASE_DIR = "${RELEASE_DIR}"
+                }
+            }
+        }
+
+        stage('Prepare environments') {
+            steps {
+                script {
+                    sshCommand remote: remote, command: """
+                        cd ${env.PRJ_DIR}
+                        sudo -u www-data bash -c 'cp shared/app/etc/*.php ${env.RELEASE_DIR}/app/etc/'
+                    """
+                }
+            }
+        }
+                        
+        stage('Run setup:upgrade') {
+            steps {
+                script {
+                    sshCommand remote: remote, command: """
+                        cd ${env.RELEASE_DIR}
+                        sudo -u www-data bash -c 'composer install'
+                        sudo -u www-data bash -c 'php bin/magento setup:upgrade'
+                    """
+                }
+            }
+        }
+
+        stage('Run setup:di:compile') {
+            steps {
+                script {
+                    sshCommand remote: remote, command: """
+                        cd ${env.RELEASE_DIR}
+                        sudo -u www-data bash -c 'php bin/magento setup:di:compile'
+                    """
+                }
+            }
+        }
+
+        stage('Run content:deploy') {
+            steps {
+                script {
+                    sshCommand remote: remote, command: """
+                        cd ${env.RELEASE_DIR}
+                        sudo -u www-data bash -c 'php bin/magento setup:static-content:deploy en_US ru_RU -f'
+                    """
+                }
+            }
+        }
+        
+        stage('Switch release') {
+            steps {
+                script {
+                    sshCommand remote: remote, command: """
+                        cd ${env.PRJ_DIR}
+                        sudo -u www-data bash -c 'ln -sfn ${env.RELEASE_DIR} ${env.PRJ_DIR}/current'
+                    """
+                }
+            }
+        }
+
+        stage('Clear cache') {
+            when {
+                expression { params.CLEAR_CACHE }
+            }
+            steps {
+                script {
+                    sshCommand remote: remote, command: """
+                        cd ${env.RELEASE_DIR}
+                        sudo -u www-data bash -c 'php bin/magento cache:flush'
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            slackSend(color: 'good', message: "Build success: ${env.JOB_NAME} #${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)")
+        }
+        failure {
+            slackSend(color: 'danger', message: "Build failed: ${env.JOB_NAME} #${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)")
+        }
+        unstable {
+            slackSend(color: 'warning', message: "Unstable build: ${env.JOB_NAME} #${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)")
+        }
+    }
+}
