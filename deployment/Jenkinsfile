@@ -2,45 +2,77 @@ def remote = [:]
 
 pipeline {
     agent any
+
     parameters {
-        gitParameter(type: 'PT_BRANCH', name: 'BRANCH_TO_BUILD', branchFilter: 'origin/(.*)', defaultValue: 'main', selectedValue: 'DEFAULT', sortMode: 'DESCENDING_SMART')
-        choice(name: 'ENV', choices: ['dev', 'demo', 'prod'], description: 'Select environment')
-        booleanParam(name: 'CLEAR_CACHE', defaultValue: false)
+        gitParameter(
+            type: 'PT_BRANCH',
+            name: 'BRANCH_TO_BUILD',
+            branchFilter: 'origin/(.*)',
+            defaultValue: 'main',
+            selectedValue: 'DEFAULT',
+            sortMode: 'DESCENDING_SMART'
+        )
+        choice(
+            name: 'ENV',
+            choices: ['dev', 'demo', 'prod'],
+            description: 'Select environment'
+        )
+        booleanParam(
+            name: 'CLEAR_CACHE',
+            defaultValue: false
+        )
     }
 
     environment {
-        PRJ_DIR='/var/www/plant-shop'
-        //SLACK=credentials('token')
-        //CHANNEL_ID=""
-        GIT_URL="git@github.com:Bella0708/Storeshop2.git"
-        HOST='3.23.131.59'
+        PRJ_DIR = '/var/www/plant-shop'
+        // SLACK = credentials('token')
+        // CHANNEL_ID = ""
+        GIT_URL = 'git@github.com:Bella0708/Storeshop2.git'
+        HOST    = '3.23.131.59'
     }
 
     stages {
+
         stage('Prepare Credentials') {
             steps {
-                withCredentials([sshUserPrivateKey(credentialsId: 'jenkins_ssh_key', usernameVariable: 'username', keyFileVariable: 'private_key')]) {
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'jenkins_ssh_key',
+                        usernameVariable: 'username',
+                        keyFileVariable: 'private_key'
+                    )
+                ]) {
                     script {
-                        remote.name = "${env.HOST}"
-                        remote.host = "${env.HOST}"
-                        remote.user = "${username}"
-                        remote.identity = readFile "${private_key}"
-                        remote.allowAnyHosts = true
+                        remote.name           = env.HOST
+                        remote.host           = env.HOST
+                        remote.user           = username
+                        remote.identity       = readFile(private_key)
+                        remote.allowAnyHosts  = true
                     }
                 }
-           }
+            }
         }
 
         stage('Checkout branch to build') {
             steps {
                 script {
-                    slackSend(color: 'good', message: "Build started: ${env.JOB_NAME} #${env.BUILD_NUMBER}")
-                    def RELEASE = sh(script: 'date +%Y-%m-%d_%s', returnStdout: true).trim()
+                    slackSend(
+                        color: 'good',
+                        message: "Build started: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+                    )
+
+                    def RELEASE = sh(
+                        script: 'date +%Y-%m-%d_%s',
+                        returnStdout: true
+                    ).trim()
+
                     def RELEASE_DIR = "${env.PRJ_DIR}/release-${RELEASE}"
+
                     sshCommand remote: remote, command: """
                         sudo -u www-data bash -c 'git clone -b ${params.BRANCH_TO_BUILD} ${env.GIT_URL} ${RELEASE_DIR}'
                     """
-                    env.RELEASE_DIR = "${RELEASE_DIR}"
+
+                    env.RELEASE_DIR = RELEASE_DIR
                 }
             }
         }
@@ -55,7 +87,7 @@ pipeline {
                 }
             }
         }
-                        
+
         stage('Run setup:upgrade') {
             steps {
                 script {
@@ -89,7 +121,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Switch release') {
             steps {
                 script {
@@ -116,4 +148,35 @@ pipeline {
         }
     }
 
+    post {
+        success {
+            script {
+                sh """
+                    curl -X POST -H 'Content-Type: application/json' \
+                    -d '{\"chat_id\": \"${CHAT_ID}\", \"text\": \"${LINK}\\n🟢 Deploy succeeded!\", \"parse_mode\": \"HTML\", \"disable_notification\": false}' \
+                    https://api.telegram.org/bot${TOKEN}/sendMessage
+                """
+            }
+        }
+
+        failure {
+            script {
+                sh """
+                    curl -X POST -H 'Content-Type: application/json' \
+                    -d '{\"chat_id\": \"${CHAT_ID}\", \"text\": \"${LINK}\\n🔴 Deploy failure!\", \"parse_mode\": \"HTML\", \"disable_notification\": false}' \
+                    https://api.telegram.org/bot${TOKEN}/sendMessage
+                """
+            }
+        }
+
+        aborted {
+            script {
+                sh """
+                    curl -X POST -H 'Content-Type: application/json' \
+                    -d '{\"chat_id\": \"${CHAT_ID}\", \"text\": \"${LINK}\\n⚪️ Deploy aborted!\", \"parse_mode\": \"HTML\", \"disable_notification\": false}' \
+                    https://api.telegram.org/bot${TOKEN}/sendMessage
+                """
+            }
+        }
+    }
 }
