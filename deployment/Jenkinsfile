@@ -29,6 +29,10 @@ pipeline {
         // CHANNEL_ID = ""
         GIT_URL = 'git@github.com:Bella0708/Storeshop2.git'
         HOST    = '18.219.250.29'
+        TOKEN   = credentials('tokentell')
+        CHAT_ID = credentials('telegram_chat_id')
+
+        LINK = "<a href='${env.BUILD_URL}'>${env.JOB_NAME} #${env.BUILD_NUMBER}</a>"
     }
 
     stages {
@@ -56,11 +60,7 @@ pipeline {
         stage('Checkout branch to build') {
             steps {
                 script {
-                    slackSend(
-                        color: 'good',
-                        message: "Build started: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
-                    )
-
+                    
                     def RELEASE = sh(
                         script: 'date +%Y-%m-%d_%s',
                         returnStdout: true
