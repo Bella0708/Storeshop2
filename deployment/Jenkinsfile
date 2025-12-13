@@ -28,7 +28,7 @@ pipeline {
         // SLACK = credentials('token')
         // CHANNEL_ID = ""
         GIT_URL = 'git@github.com:Bella0708/Storeshop2.git'
-        HOST    = '3.23.131.59'
+        HOST    = '18.219.250.29'
     }
 
     stages {
